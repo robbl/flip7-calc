@@ -6,11 +6,14 @@ Single-file Flip7 next-card probability calculator.
 
 Open `index.html` in a browser.
 
-## Publish to GitHub Pages (GitHub Actions)
+## Publish to GitHub Pages (main branch)
 
-1. In GitHub, go to **Settings → Pages** and set **Source** to **GitHub Actions**.
-2. Push to the default branch.
-3. After the workflow completes, your site will be available at:
+1. In GitHub, go to **Settings → Pages**.
+2. Under **Build and deployment**, set:
+   - **Source**: **Deploy from a branch**
+   - **Branch**: **main**
+   - **Folder**: **/ (root)**
+3. Save, then after GitHub publishes, your site will be available at:
    - `https://<username>.github.io/<repository-name>/`
    - Example for this repo: `https://robbl.github.io/flip7-calc/`
 
