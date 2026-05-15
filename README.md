@@ -4,7 +4,7 @@ Single-file Flip7 next-card probability calculator.
 
 ## Run
 
-Open `/home/runner/work/flip7-calc/flip7-calc/index.html` in a browser.
+Open `index.html` in a browser.
 
 ## What it does
 
