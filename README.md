@@ -22,7 +22,7 @@ Open `index.html` in a browser.
 - Tracks cards already played
 - Tracks which played cards are in your hand
 - Provides a card grid with per-card `+1` / `-1` controls
-- For number cards `0-12`, provides `+hand` to mark draws to your hand
+- For number cards `0-12` (if present in the deck), provides `+hand` to mark draws to your hand
 - Computes:
   - safe-draw probability
   - bust probability

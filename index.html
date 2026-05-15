@@ -164,7 +164,7 @@
 
   <section class="card">
     <h2>Played cards</h2>
-    <p>Use +1 / -1 for each card type. Number cards 0-12 also have +hand to mark a draw into your hand.</p>
+    <p>Use +1 / -1 for each card type. Number cards 0-12 (if present in the deck) also have +hand to mark a draw into your hand.</p>
     <div class="row">
       <button id="undoBtn" class="secondary">Undo last</button>
       <button id="resetBtn" class="secondary">Reset all</button>
@@ -275,8 +275,15 @@
 
   function normalizeState(candidate) {
     const fallbackDeck = parseDeckInput(DEFAULT_DECK_LINES);
-    const deck = Array.isArray(candidate?.deck) && candidate.deck.length
+    const rawDeck = Array.isArray(candidate?.deck) && candidate.deck.length
       ? candidate.deck.filter(x => x && typeof x.label === "string" && Number.isInteger(x.count) && x.count >= 0)
+      : fallbackDeck;
+    const dedupedDeckMap = new Map();
+    for (const item of rawDeck) {
+      dedupedDeckMap.set(item.label, (dedupedDeckMap.get(item.label) || 0) + item.count);
+    }
+    const deck = dedupedDeckMap.size
+      ? Array.from(dedupedDeckMap, ([label, count]) => ({ label, count }))
       : fallbackDeck;
     const labels = new Set(deck.map(d => d.label));
     const played = {};
@@ -446,8 +453,6 @@
     renderTable();
     renderHand();
     updateRecommendation();
-    els.deckError.textContent = "";
-    els.actionError.textContent = "";
   }
 
   function applyCardDelta(label, playedDelta, handDelta) {
@@ -483,6 +488,7 @@
     if (nextHand > 0) state.hand[label] = nextHand;
     else delete state.hand[label];
     state.history.push({ label, playedDelta, handDelta });
+    els.actionError.textContent = "";
     serializeState();
     render();
   }
@@ -490,12 +496,13 @@
   function undoLast() {
     const last = state.history.pop();
     if (!last) return;
-    // Keep undo compatible with old persisted entries that used only {inHand}.
-    const playedDelta = Number.isInteger(last.playedDelta) ? last.playedDelta : 1;
-    const handDelta = Number.isInteger(last.handDelta) ? last.handDelta : (last.inHand ? 1 : 0);
-    state.played[last.label] = Math.max(0, (state.played[last.label] || 0) - playedDelta);
-    state.hand[last.label] = Math.max(0, (state.hand[last.label] || 0) - handDelta);
-    if (state.hand[last.label] === 0) delete state.hand[last.label];
+    const next = normalizeState({
+      deck: state.deck,
+      threshold: state.threshold,
+      history: state.history
+    });
+    state = next;
+    els.actionError.textContent = "";
     serializeState();
     render();
   }
@@ -509,6 +516,7 @@
         history: state?.history ?? []
       });
       state = next;
+      els.deckError.textContent = "";
       serializeState();
       render();
     } catch (err) {
@@ -518,6 +526,7 @@
 
   els.restoreDeckBtn.addEventListener("click", () => {
     const deck = parseDeckInput(DEFAULT_DECK_LINES);
+    els.deckError.textContent = "";
     resetWithDeck(deck);
   });
 
@@ -552,7 +561,12 @@
 
   els.resetBtn.addEventListener("click", () => {
     if (!confirm("Reset played cards and hand state?")) return;
+    els.actionError.textContent = "";
     resetWithDeck(state.deck);
+  });
+
+  els.deckInput.addEventListener("input", () => {
+    els.deckError.textContent = "";
   });
 
   function init() {
