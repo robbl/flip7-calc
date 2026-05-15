@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flip7 Next-Card Calculator</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f172a;
+      --card: #111827;
+      --border: #334155;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --good: #22c55e;
+      --bad: #ef4444;
+      --accent: #38bdf8;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f8fafc;
+        --card: #ffffff;
+        --border: #cbd5e1;
+        --text: #0f172a;
+        --muted: #475569;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.4;
+    }
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    h1, h2 { margin: 0 0 8px 0; }
+    h1 { font-size: 1.3rem; }
+    h2 { font-size: 1rem; }
+    p { margin: 6px 0; color: var(--muted); }
+    .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    input, select, textarea, button {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text);
+      padding: 8px 10px;
+      font: inherit;
+    }
+    textarea {
+      width: 100%;
+      min-height: 110px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.9rem;
+    }
+    button {
+      cursor: pointer;
+      background: color-mix(in oklab, var(--card) 85%, var(--accent));
+    }
+    button.secondary {
+      background: transparent;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+    th, td {
+      border-bottom: 1px solid var(--border);
+      padding: 6px;
+      text-align: left;
+    }
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 2px 8px;
+      margin: 2px 4px 2px 0;
+      font-size: 0.88rem;
+    }
+    .good { color: var(--good); font-weight: 700; }
+    .bad { color: var(--bad); font-weight: 700; }
+    .muted { color: var(--muted); }
+    .grid-2 {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+  </style>
+</head>
+<body>
+<main>
+  <section class="card">
+    <h1>Flip7: Should I take the next card?</h1>
+    <p>This tool tracks played cards and estimates your next-draw risk from the remaining deck.</p>
+  </section>
+
+  <section class="card grid-2">
+    <div>
+      <h2>Deck setup (editable)</h2>
+      <p>One card type per line: <code>label,count</code>. Adjust to your edition/rules.</p>
+      <textarea id="deckInput"></textarea>
+      <div class="row" style="margin-top: 8px;">
+        <button id="applyDeckBtn">Apply deck setup</button>
+        <button id="restoreDeckBtn" class="secondary">Restore default deck</button>
+      </div>
+      <p id="deckError" class="bad" aria-live="polite"></p>
+    </div>
+    <div>
+      <h2>Recommendation policy</h2>
+      <p>Draw if safe probability is at least this threshold.</p>
+      <div class="row">
+        <label for="thresholdInput">Safe threshold (%)</label>
+        <input id="thresholdInput" type="number" min="0" max="100" step="1" value="70">
+      </div>
+      <p class="muted">You can change this any time.</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Add latest played card</h2>
+    <div class="row">
+      <label for="cardSelect">Card</label>
+      <select id="cardSelect"></select>
+      <label><input id="inHandCheckbox" type="checkbox"> This card is in my hand</label>
+      <button id="addCardBtn">Add card</button>
+      <button id="undoBtn" class="secondary">Undo last</button>
+      <button id="resetBtn" class="secondary">Reset all</button>
+    </div>
+    <p id="actionError" class="bad" aria-live="polite"></p>
+  </section>
+
+  <section class="card grid-2">
+    <div>
+      <h2>Result</h2>
+      <p id="resultLine"></p>
+      <p id="recommendationLine"></p>
+      <p id="explanationLine" class="muted"></p>
+    </div>
+    <div>
+      <h2>Current hand</h2>
+      <div id="handBadges"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Deck status</h2>
+    <table>
+      <thead>
+      <tr>
+        <th>Card</th>
+        <th>Total</th>
+        <th>Played</th>
+        <th>Remaining</th>
+      </tr>
+      </thead>
+      <tbody id="deckTableBody"></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+  const STORAGE_KEY = "flip7-calc-state-v1";
+  const DEFAULT_DECK_LINES = Array.from({ length: 12 }, (_, i) => `${i + 1},${i + 1}`).join("\n");
+
+  const els = {
+    deckInput: document.getElementById("deckInput"),
+    applyDeckBtn: document.getElementById("applyDeckBtn"),
+    restoreDeckBtn: document.getElementById("restoreDeckBtn"),
+    deckError: document.getElementById("deckError"),
+    thresholdInput: document.getElementById("thresholdInput"),
+    cardSelect: document.getElementById("cardSelect"),
+    inHandCheckbox: document.getElementById("inHandCheckbox"),
+    addCardBtn: document.getElementById("addCardBtn"),
+    undoBtn: document.getElementById("undoBtn"),
+    resetBtn: document.getElementById("resetBtn"),
+    actionError: document.getElementById("actionError"),
+    resultLine: document.getElementById("resultLine"),
+    recommendationLine: document.getElementById("recommendationLine"),
+    explanationLine: document.getElementById("explanationLine"),
+    handBadges: document.getElementById("handBadges"),
+    deckTableBody: document.getElementById("deckTableBody")
+  };
+
+  /** @type {{ deck: {label: string, count: number}[], played: Record<string, number>, hand: Record<string, number>, history: {label:string,inHand:boolean}[], threshold: number }} */
+  let state;
+
+  function parseDeckInput(raw) {
+    const lines = raw.split("\n").map(s => s.trim()).filter(Boolean);
+    if (!lines.length) throw new Error("Deck setup is empty.");
+    const seen = new Set();
+    const deck = [];
+    for (const line of lines) {
+      const parts = line.split(",").map(s => s.trim());
+      if (parts.length !== 2) throw new Error(`Invalid line "${line}" (expected label,count).`);
+      const label = parts[0];
+      const count = Number(parts[1]);
+      if (!label) throw new Error(`Missing label in "${line}".`);
+      if (seen.has(label)) throw new Error(`Duplicate label "${label}".`);
+      if (!Number.isInteger(count) || count < 0) throw new Error(`Invalid count for "${label}". Use a whole number >= 0.`);
+      seen.add(label);
+      deck.push({ label, count });
+    }
+    const totalCards = deck.reduce((sum, c) => sum + c.count, 0);
+    if (totalCards <= 0) throw new Error("Deck must have at least one card.");
+    return deck;
+  }
+
+  function clamp(n, min, max) {
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function serializeState() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function loadState() {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return null;
+    try {
+      const parsed = JSON.parse(saved);
+      if (!parsed || !Array.isArray(parsed.deck)) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  function normalizeState(candidate) {
+    const fallbackDeck = parseDeckInput(DEFAULT_DECK_LINES);
+    const deck = Array.isArray(candidate?.deck) && candidate.deck.length
+      ? candidate.deck.filter(x => x && typeof x.label === "string" && Number.isInteger(x.count) && x.count >= 0)
+      : fallbackDeck;
+    const labels = new Set(deck.map(d => d.label));
+    const played = {};
+    const hand = {};
+    const history = Array.isArray(candidate?.history) ? candidate.history : [];
+    for (const entry of history) {
+      if (!entry || !labels.has(entry.label)) continue;
+      played[entry.label] = (played[entry.label] || 0) + 1;
+      if (entry.inHand) hand[entry.label] = (hand[entry.label] || 0) + 1;
+    }
+    for (const item of deck) {
+      played[item.label] = clamp(played[item.label] || 0, 0, item.count);
+    }
+    for (const label of Object.keys(hand)) {
+      hand[label] = clamp(hand[label], 0, played[label] || 0);
+      if (hand[label] === 0) delete hand[label];
+    }
+    const threshold = clamp(Number(candidate?.threshold) || 70, 0, 100);
+    return { deck, played, hand, history: history.filter(e => labels.has(e?.label)), threshold };
+  }
+
+  function resetWithDeck(deck) {
+    state = {
+      deck,
+      played: Object.fromEntries(deck.map(d => [d.label, 0])),
+      hand: {},
+      history: [],
+      threshold: clamp(Number(els.thresholdInput.value) || 70, 0, 100)
+    };
+    serializeState();
+    render();
+  }
+
+  function remainingFor(label) {
+    const item = state.deck.find(d => d.label === label);
+    if (!item) return 0;
+    return Math.max(0, item.count - (state.played[label] || 0));
+  }
+
+  function updateRecommendation() {
+    const remainingTotal = state.deck.reduce((sum, d) => sum + remainingFor(d.label), 0);
+    const handLabels = Object.keys(state.hand).filter(k => state.hand[k] > 0);
+    const bustCards = handLabels.reduce((sum, label) => sum + remainingFor(label), 0);
+    const safeCards = Math.max(0, remainingTotal - bustCards);
+    const safeP = remainingTotal === 0 ? 0 : safeCards / remainingTotal;
+    const bustP = remainingTotal === 0 ? 0 : bustCards / remainingTotal;
+
+    els.resultLine.textContent = `Safe draw: ${(safeP * 100).toFixed(2)}% | Bust: ${(bustP * 100).toFixed(2)}%`;
+    if (remainingTotal === 0) {
+      els.recommendationLine.innerHTML = `<span class="bad">No cards left.</span>`;
+      els.explanationLine.textContent = `Remaining deck size is 0.`;
+      return;
+    }
+    const shouldDraw = safeP * 100 >= state.threshold;
+    els.recommendationLine.innerHTML = shouldDraw
+      ? `<span class="good">Recommendation: TAKE the next card</span>`
+      : `<span class="bad">Recommendation: STOP</span>`;
+    els.explanationLine.textContent = `${safeCards} safe card(s), ${bustCards} bust card(s), ${remainingTotal} total remaining. Threshold: ${state.threshold}%.`;
+  }
+
+  function renderTable() {
+    els.deckTableBody.innerHTML = "";
+    for (const d of state.deck) {
+      const played = state.played[d.label] || 0;
+      const remaining = Math.max(0, d.count - played);
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${d.label}</td><td>${d.count}</td><td>${played}</td><td>${remaining}</td>`;
+      els.deckTableBody.appendChild(tr);
+    }
+  }
+
+  function renderHand() {
+    const entries = Object.entries(state.hand).filter(([, v]) => v > 0);
+    if (!entries.length) {
+      els.handBadges.innerHTML = `<span class="muted">No cards in hand yet.</span>`;
+      return;
+    }
+    els.handBadges.innerHTML = entries
+      .map(([label, count]) => `<span class="pill">${label} × ${count}</span>`)
+      .join("");
+  }
+
+  function renderCardSelect() {
+    const current = els.cardSelect.value;
+    els.cardSelect.innerHTML = "";
+    for (const d of state.deck) {
+      const option = document.createElement("option");
+      option.value = d.label;
+      option.textContent = d.label;
+      els.cardSelect.appendChild(option);
+    }
+    if ([...els.cardSelect.options].some(o => o.value === current)) {
+      els.cardSelect.value = current;
+    }
+  }
+
+  function renderDeckInput() {
+    els.deckInput.value = state.deck.map(d => `${d.label},${d.count}`).join("\n");
+  }
+
+  function render() {
+    els.thresholdInput.value = String(state.threshold);
+    renderDeckInput();
+    renderCardSelect();
+    renderTable();
+    renderHand();
+    updateRecommendation();
+    els.deckError.textContent = "";
+    els.actionError.textContent = "";
+  }
+
+  function addCard(label, inHand) {
+    const item = state.deck.find(d => d.label === label);
+    if (!item) {
+      els.actionError.textContent = `Unknown card: ${label}.`;
+      return;
+    }
+    const played = state.played[label] || 0;
+    if (played >= item.count) {
+      els.actionError.textContent = `Cannot add ${label}: no remaining copies in deck.`;
+      return;
+    }
+    state.played[label] = played + 1;
+    if (inHand) state.hand[label] = (state.hand[label] || 0) + 1;
+    state.history.push({ label, inHand: Boolean(inHand) });
+    serializeState();
+    render();
+  }
+
+  function undoLast() {
+    const last = state.history.pop();
+    if (!last) return;
+    state.played[last.label] = Math.max(0, (state.played[last.label] || 0) - 1);
+    if (last.inHand) {
+      state.hand[last.label] = Math.max(0, (state.hand[last.label] || 0) - 1);
+      if (state.hand[last.label] === 0) delete state.hand[last.label];
+    }
+    serializeState();
+    render();
+  }
+
+  els.applyDeckBtn.addEventListener("click", () => {
+    try {
+      const deck = parseDeckInput(els.deckInput.value);
+      const next = normalizeState({
+        deck,
+        threshold: state?.threshold ?? 70,
+        history: state?.history ?? []
+      });
+      state = next;
+      serializeState();
+      render();
+    } catch (err) {
+      els.deckError.textContent = err.message || "Invalid deck input.";
+    }
+  });
+
+  els.restoreDeckBtn.addEventListener("click", () => {
+    const deck = parseDeckInput(DEFAULT_DECK_LINES);
+    resetWithDeck(deck);
+  });
+
+  els.thresholdInput.addEventListener("change", () => {
+    state.threshold = clamp(Number(els.thresholdInput.value) || 0, 0, 100);
+    serializeState();
+    render();
+  });
+
+  els.addCardBtn.addEventListener("click", () => {
+    addCard(els.cardSelect.value, els.inHandCheckbox.checked);
+  });
+
+  els.undoBtn.addEventListener("click", () => undoLast());
+
+  els.resetBtn.addEventListener("click", () => {
+    if (!confirm("Reset played cards and hand state?")) return;
+    resetWithDeck(state.deck);
+  });
+
+  function init() {
+    const loaded = loadState();
+    if (loaded) {
+      state = normalizeState(loaded);
+    } else {
+      state = normalizeState({ deck: parseDeckInput(DEFAULT_DECK_LINES), threshold: 70, history: [] });
+    }
+    render();
+  }
+
+  init();
+</script>
+</body>
+</html>
