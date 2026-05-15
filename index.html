@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Flip7 Card Grid</title>
+  <title>Flip7 Card Tracker + Recommendation</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -110,6 +110,7 @@
 
 <script>
   const STORAGE_KEY = "flip7-calc-state-v2";
+  const LEGACY_STORAGE_KEY = "flip7-calc-state-v1";
   const SAFE_THRESHOLD_PERCENT = 70;
   const STANDARD_DECK = [
     { label: "0", count: 1 },
@@ -159,7 +160,7 @@
   }
 
   function loadState() {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return;
     try {
       const parsed = JSON.parse(raw);
@@ -176,6 +177,7 @@
         if (handCount > 0) nextHand[label] = handCount;
       }
       state = { played: nextPlayed, hand: nextHand };
+      saveState();
     } catch {
       // Ignore invalid saved state.
     }
@@ -228,7 +230,7 @@
       counts.className = "muted";
       const handCount = state.hand[d.label] || 0;
       counts.textContent = isNumberCardLabel(d.label)
-        ? `${state.played[d.label] || 0}/${d.count} (hand ${handCount})`
+        ? `${state.played[d.label] || 0}/${d.count}${handCount > 0 ? ` (hand ${handCount})` : ""}`
         : `${state.played[d.label] || 0}/${d.count}`;
       header.append(name, counts);
 
