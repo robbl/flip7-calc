@@ -225,7 +225,11 @@
     deckTableBody: document.getElementById("deckTableBody")
   };
 
-  /** @type {{ deck: {label: string, count: number}[], played: Record<string, number>, hand: Record<string, number>, history: {label:string,playedDelta:number,handDelta:number}[], threshold: number }} */
+  /**
+   * @typedef {{ label: string, playedDelta: number, handDelta: number, inHand?: boolean }} HistoryEntry
+   * @typedef {{ deck: {label: string, count: number}[], played: Record<string, number>, hand: Record<string, number>, history: HistoryEntry[], threshold: number }} AppState
+   */
+  /** @type {AppState} */
   let state;
 
   function parseDeckInput(raw) {
@@ -280,6 +284,7 @@
     const history = Array.isArray(candidate?.history) ? candidate.history : [];
     for (const entry of history) {
       if (!entry || !labels.has(entry.label)) continue;
+      // Backward compatibility for previously saved history entries {label, inHand}.
       const playedDelta = Number.isInteger(entry.playedDelta)
         ? entry.playedDelta
         : (entry.inHand === true || entry.inHand === false ? 1 : 0);
@@ -485,6 +490,7 @@
   function undoLast() {
     const last = state.history.pop();
     if (!last) return;
+    // Keep undo compatible with old persisted entries that used only {inHand}.
     const playedDelta = Number.isInteger(last.playedDelta) ? last.playedDelta : 1;
     const handDelta = Number.isInteger(last.handDelta) ? last.handDelta : (last.inHand ? 1 : 0);
     state.played[last.label] = Math.max(0, (state.played[last.label] || 0) - playedDelta);
