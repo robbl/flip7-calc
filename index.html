@@ -104,6 +104,33 @@
       gap: 12px;
       grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     }
+    .card-grid {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    }
+    .card-tile {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      display: grid;
+      gap: 6px;
+    }
+    .card-tile-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+    }
+    .card-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .card-actions button {
+      padding: 4px 8px;
+      font-size: 0.86rem;
+    }
   </style>
 </head>
 <body>
@@ -136,15 +163,13 @@
   </section>
 
   <section class="card">
-    <h2>Add latest played card</h2>
+    <h2>Played cards</h2>
+    <p>Use +1 / -1 for each card type. Number cards 0-12 also have +hand to mark a draw into your hand.</p>
     <div class="row">
-      <label for="cardSelect">Card</label>
-      <select id="cardSelect"></select>
-      <label><input id="inHandCheckbox" type="checkbox"> This card is in my hand</label>
-      <button id="addCardBtn">Add card</button>
       <button id="undoBtn" class="secondary">Undo last</button>
       <button id="resetBtn" class="secondary">Reset all</button>
     </div>
+    <div id="cardGrid" class="card-grid" style="margin-top: 10px;"></div>
     <p id="actionError" class="bad" aria-live="polite"></p>
   </section>
 
@@ -189,9 +214,7 @@
     restoreDeckBtn: document.getElementById("restoreDeckBtn"),
     deckError: document.getElementById("deckError"),
     thresholdInput: document.getElementById("thresholdInput"),
-    cardSelect: document.getElementById("cardSelect"),
-    inHandCheckbox: document.getElementById("inHandCheckbox"),
-    addCardBtn: document.getElementById("addCardBtn"),
+    cardGrid: document.getElementById("cardGrid"),
     undoBtn: document.getElementById("undoBtn"),
     resetBtn: document.getElementById("resetBtn"),
     actionError: document.getElementById("actionError"),
@@ -202,7 +225,7 @@
     deckTableBody: document.getElementById("deckTableBody")
   };
 
-  /** @type {{ deck: {label: string, count: number}[], played: Record<string, number>, hand: Record<string, number>, history: {label:string,inHand:boolean}[], threshold: number }} */
+  /** @type {{ deck: {label: string, count: number}[], played: Record<string, number>, hand: Record<string, number>, history: {label:string,playedDelta:number,handDelta:number}[], threshold: number }} */
   let state;
 
   function parseDeckInput(raw) {
@@ -257,8 +280,14 @@
     const history = Array.isArray(candidate?.history) ? candidate.history : [];
     for (const entry of history) {
       if (!entry || !labels.has(entry.label)) continue;
-      played[entry.label] = (played[entry.label] || 0) + 1;
-      if (entry.inHand) hand[entry.label] = (hand[entry.label] || 0) + 1;
+      const playedDelta = Number.isInteger(entry.playedDelta)
+        ? entry.playedDelta
+        : (entry.inHand === true || entry.inHand === false ? 1 : 0);
+      const handDelta = Number.isInteger(entry.handDelta)
+        ? entry.handDelta
+        : (entry.inHand === true ? 1 : 0);
+      played[entry.label] = clamp((played[entry.label] || 0) + playedDelta, 0, deck.find(d => d.label === entry.label)?.count || 0);
+      hand[entry.label] = clamp((hand[entry.label] || 0) + handDelta, 0, played[entry.label] || 0);
     }
     for (const item of deck) {
       played[item.label] = clamp(played[item.label] || 0, 0, item.count);
@@ -349,17 +378,55 @@
     }
   }
 
-  function renderCardSelect() {
-    const current = els.cardSelect.value;
-    els.cardSelect.innerHTML = "";
+  function isNumberCardLabel(label) {
+    if (!/^\d+$/.test(label)) return false;
+    const n = Number(label);
+    return n >= 0 && n <= 12;
+  }
+
+  function renderCardGrid() {
+    els.cardGrid.innerHTML = "";
     for (const d of state.deck) {
-      const option = document.createElement("option");
-      option.value = d.label;
-      option.textContent = d.label;
-      els.cardSelect.appendChild(option);
-    }
-    if ([...els.cardSelect.options].some(o => o.value === current)) {
-      els.cardSelect.value = current;
+      const tile = document.createElement("div");
+      tile.className = "card-tile";
+
+      const header = document.createElement("div");
+      header.className = "card-tile-header";
+      const name = document.createElement("span");
+      name.textContent = d.label;
+      const counts = document.createElement("span");
+      counts.className = "muted";
+      counts.textContent = `${state.played[d.label] || 0}/${d.count}`;
+      header.append(name, counts);
+
+      const actions = document.createElement("div");
+      actions.className = "card-actions";
+
+      const plusOne = document.createElement("button");
+      plusOne.type = "button";
+      plusOne.dataset.label = d.label;
+      plusOne.dataset.action = "inc";
+      plusOne.textContent = "+1";
+
+      const minusOne = document.createElement("button");
+      minusOne.type = "button";
+      minusOne.dataset.label = d.label;
+      minusOne.dataset.action = "dec";
+      minusOne.textContent = "-1";
+
+      actions.append(plusOne, minusOne);
+
+      if (isNumberCardLabel(d.label)) {
+        const plusHand = document.createElement("button");
+        plusHand.type = "button";
+        plusHand.dataset.label = d.label;
+        plusHand.dataset.action = "hand";
+        plusHand.textContent = "+hand";
+        actions.appendChild(plusHand);
+      }
+
+      tile.append(header, actions);
+      els.cardGrid.appendChild(tile);
     }
   }
 
@@ -370,7 +437,7 @@
   function render() {
     els.thresholdInput.value = String(state.threshold);
     renderDeckInput();
-    renderCardSelect();
+    renderCardGrid();
     renderTable();
     renderHand();
     updateRecommendation();
@@ -378,20 +445,39 @@
     els.actionError.textContent = "";
   }
 
-  function addCard(label, inHand) {
+  function applyCardDelta(label, playedDelta, handDelta) {
     const item = state.deck.find(d => d.label === label);
     if (!item) {
       els.actionError.textContent = `Card not found in current deck configuration: ${label}.`;
       return;
     }
-    const played = state.played[label] || 0;
-    if (played >= item.count) {
+
+    const beforePlayed = state.played[label] || 0;
+    const beforeHand = state.hand[label] || 0;
+    const nextPlayed = beforePlayed + playedDelta;
+    const nextHand = beforeHand + handDelta;
+
+    if (nextPlayed < 0) {
+      els.actionError.textContent = `Cannot reduce ${label}: already at 0 played.`;
+      return;
+    }
+    if (nextPlayed > item.count) {
       els.actionError.textContent = `Cannot add ${label}: no remaining copies in deck.`;
       return;
     }
-    state.played[label] = played + 1;
-    if (inHand) state.hand[label] = (state.hand[label] || 0) + 1;
-    state.history.push({ label, inHand: Boolean(inHand) });
+    if (nextHand < 0) {
+      els.actionError.textContent = `Cannot reduce ${label} in hand: already at 0.`;
+      return;
+    }
+    if (nextHand > nextPlayed) {
+      els.actionError.textContent = `Hand count for ${label} cannot exceed played count.`;
+      return;
+    }
+
+    state.played[label] = nextPlayed;
+    if (nextHand > 0) state.hand[label] = nextHand;
+    else delete state.hand[label];
+    state.history.push({ label, playedDelta, handDelta });
     serializeState();
     render();
   }
@@ -399,11 +485,11 @@
   function undoLast() {
     const last = state.history.pop();
     if (!last) return;
-    state.played[last.label] = Math.max(0, (state.played[last.label] || 0) - 1);
-    if (last.inHand) {
-      state.hand[last.label] = Math.max(0, (state.hand[last.label] || 0) - 1);
-      if (state.hand[last.label] === 0) delete state.hand[last.label];
-    }
+    const playedDelta = Number.isInteger(last.playedDelta) ? last.playedDelta : 1;
+    const handDelta = Number.isInteger(last.handDelta) ? last.handDelta : (last.inHand ? 1 : 0);
+    state.played[last.label] = Math.max(0, (state.played[last.label] || 0) - playedDelta);
+    state.hand[last.label] = Math.max(0, (state.hand[last.label] || 0) - handDelta);
+    if (state.hand[last.label] === 0) delete state.hand[last.label];
     serializeState();
     render();
   }
@@ -435,8 +521,25 @@
     render();
   });
 
-  els.addCardBtn.addEventListener("click", () => {
-    addCard(els.cardSelect.value, els.inHandCheckbox.checked);
+  els.cardGrid.addEventListener("click", (event) => {
+    const button = event.target.closest("button");
+    if (!button) return;
+    const label = button.dataset.label;
+    const action = button.dataset.action;
+    if (!label || !action) return;
+
+    if (action === "inc") {
+      applyCardDelta(label, 1, 0);
+      return;
+    }
+    if (action === "dec") {
+      const handCount = state.hand[label] || 0;
+      applyCardDelta(label, -1, handCount > 0 ? -1 : 0);
+      return;
+    }
+    if (action === "hand") {
+      applyCardDelta(label, 1, 1);
+    }
   });
 
   els.undoBtn.addEventListener("click", () => undoLast());
