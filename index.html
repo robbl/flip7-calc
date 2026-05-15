@@ -179,7 +179,9 @@
 
 <script>
   const STORAGE_KEY = "flip7-calc-state-v1";
-  const DEFAULT_DECK_LINES = Array.from({ length: 12 }, (_, i) => `${i + 1},${i + 1}`).join("\n");
+  const DEFAULT_DECK_SIZE = 12;
+  const DEFAULT_THRESHOLD = 70;
+  const DEFAULT_DECK_LINES = Array.from({ length: DEFAULT_DECK_SIZE }, (_, i) => `${i + 1},${i + 1}`).join("\n");
 
   const els = {
     deckInput: document.getElementById("deckInput"),
@@ -265,7 +267,7 @@
       hand[label] = clamp(hand[label], 0, played[label] || 0);
       if (hand[label] === 0) delete hand[label];
     }
-    const threshold = clamp(Number(candidate?.threshold) || 70, 0, 100);
+    const threshold = clamp(Number(candidate?.threshold) || DEFAULT_THRESHOLD, 0, 100);
     return { deck, played, hand, history: history.filter(e => labels.has(e?.label)), threshold };
   }
 
@@ -275,7 +277,7 @@
       played: Object.fromEntries(deck.map(d => [d.label, 0])),
       hand: {},
       history: [],
-      threshold: clamp(Number(els.thresholdInput.value) || 70, 0, 100)
+      threshold: clamp(Number(els.thresholdInput.value) || DEFAULT_THRESHOLD, 0, 100)
     };
     serializeState();
     render();
@@ -295,16 +297,21 @@
     const safeP = remainingTotal === 0 ? 0 : safeCards / remainingTotal;
     const bustP = remainingTotal === 0 ? 0 : bustCards / remainingTotal;
 
-    els.resultLine.textContent = `Safe draw: ${(safeP * 100).toFixed(2)}% | Bust: ${(bustP * 100).toFixed(2)}%`;
+    const safePct = (safeP * 100).toFixed(2);
+    const bustPct = (bustP * 100).toFixed(2);
+    els.resultLine.textContent = `Safe draw: ${safePct}% | Bust: ${bustPct}%`;
+    els.resultLine.setAttribute("aria-label", `Safe draw probability ${safePct} percent. Bust probability ${bustPct} percent.`);
     if (remainingTotal === 0) {
-      els.recommendationLine.innerHTML = `<span class="bad">No cards left.</span>`;
+      els.recommendationLine.textContent = "Recommendation: STOP (no cards left)";
+      els.recommendationLine.className = "bad";
       els.explanationLine.textContent = `Remaining deck size is 0.`;
       return;
     }
     const shouldDraw = safeP * 100 >= state.threshold;
-    els.recommendationLine.innerHTML = shouldDraw
-      ? `<span class="good">Recommendation: TAKE the next card</span>`
-      : `<span class="bad">Recommendation: STOP</span>`;
+    els.recommendationLine.textContent = shouldDraw
+      ? "Recommendation: TAKE the next card"
+      : "Recommendation: STOP";
+    els.recommendationLine.className = shouldDraw ? "good" : "bad";
     els.explanationLine.textContent = `${safeCards} safe card(s), ${bustCards} bust card(s), ${remainingTotal} total remaining. Threshold: ${state.threshold}%.`;
   }
 
@@ -314,7 +321,15 @@
       const played = state.played[d.label] || 0;
       const remaining = Math.max(0, d.count - played);
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${d.label}</td><td>${d.count}</td><td>${played}</td><td>${remaining}</td>`;
+      const tdLabel = document.createElement("td");
+      const tdTotal = document.createElement("td");
+      const tdPlayed = document.createElement("td");
+      const tdRemaining = document.createElement("td");
+      tdLabel.textContent = d.label;
+      tdTotal.textContent = String(d.count);
+      tdPlayed.textContent = String(played);
+      tdRemaining.textContent = String(remaining);
+      tr.append(tdLabel, tdTotal, tdPlayed, tdRemaining);
       els.deckTableBody.appendChild(tr);
     }
   }
@@ -325,9 +340,13 @@
       els.handBadges.innerHTML = `<span class="muted">No cards in hand yet.</span>`;
       return;
     }
-    els.handBadges.innerHTML = entries
-      .map(([label, count]) => `<span class="pill">${label} × ${count}</span>`)
-      .join("");
+    els.handBadges.innerHTML = "";
+    for (const [label, count] of entries) {
+      const badge = document.createElement("span");
+      badge.className = "pill";
+      badge.textContent = `${label} × ${count}`;
+      els.handBadges.appendChild(badge);
+    }
   }
 
   function renderCardSelect() {
@@ -362,7 +381,7 @@
   function addCard(label, inHand) {
     const item = state.deck.find(d => d.label === label);
     if (!item) {
-      els.actionError.textContent = `Unknown card: ${label}.`;
+      els.actionError.textContent = `Card not found in current deck configuration: ${label}.`;
       return;
     }
     const played = state.played[label] || 0;
@@ -394,7 +413,7 @@
       const deck = parseDeckInput(els.deckInput.value);
       const next = normalizeState({
         deck,
-        threshold: state?.threshold ?? 70,
+        threshold: state?.threshold ?? DEFAULT_THRESHOLD,
         history: state?.history ?? []
       });
       state = next;
@@ -432,7 +451,7 @@
     if (loaded) {
       state = normalizeState(loaded);
     } else {
-      state = normalizeState({ deck: parseDeckInput(DEFAULT_DECK_LINES), threshold: 70, history: [] });
+      state = normalizeState({ deck: parseDeckInput(DEFAULT_DECK_LINES), threshold: DEFAULT_THRESHOLD, history: [] });
     }
     render();
   }
