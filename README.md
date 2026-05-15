@@ -1,6 +1,6 @@
 # flip7-calc
 
-Single-file Flip7 next-card probability calculator.
+Single-file Flip7 card grid and simple next-card recommendation.
 
 ## Run
 
@@ -19,17 +19,8 @@ Open `index.html` in a browser.
 
 ## What it does
 
-- Tracks cards already played
-- Tracks which played cards are in your hand
-- Provides a card grid with per-card `+1` / `-1` controls
-- For number cards `0-12` (if present in the deck), provides `+hand` to mark draws to your hand
-- Computes:
-  - safe-draw probability
-  - bust probability
-  - draw/stop recommendation from a configurable threshold
+- Shows a fixed grid of all standard Flip7 cards (number, special, and action cards)
+- Lets you track cards played with per-card `+1` / `-1`
+- Lets you mark number draws to hand with `+hand`
+- Shows a single simple recommendation for race-to-200 play
 - Persists state in localStorage
-- Supports undo last card and full reset
-
-## Notes
-
-- Deck setup is editable (`label,count` per line), so you can match your Flip7 edition/rules.
